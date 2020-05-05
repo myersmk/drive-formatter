@@ -1,0 +1,98 @@
+---
+        
+#- name: download binary
+#  get_url:
+#    url: https://link.domain.om
+#    dest: /opt/filename
+#    mode: 0755
+#  register: result
+      
+#- name: symlink binary to /usr/local/bin
+#  file:
+#    dest: /usr/local/bin/filename
+#    src: /opt/filename
+#    state: link
+    
+- name: set hostname
+  hostname:
+    name: "{{ inventory_hostname }}"
+  when: ansible_fqdn != ansible_ssh_host
+
+- name: mod /etc/hosts  
+  lineinfile:
+    dest: /etc/hosts
+    line: "{{ hostvars[item].ansible_default_ipv4.address }} {{ hostvars[item].inventory_hostname }} {{ hostvars[item].inventory_hostname_short }}.{{ ansible_domain }} {{ hostvars[item].inventory_hostname }}"
+    state: present
+    backup: yes
+  with_items: "{{groups.k8s}}"
+
+  # ports from vars file future    
+- name: k83 firewalld ports
+  firewalld:
+    port: 9000/tcp
+    state: enabled
+    permanent: true
+    immediate: yes
+
+- name: Configuring sysctl
+  sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    reload: yes
+  with_items:
+    - { name: "net.ipv4.conf.all.forwarding", value: 0 }
+    - { name: "net.core.somaxconn", value: 4096 }
+    - { name: "net.ipv4.tcp_fin_timeout", value: 30 }
+    - { name: "net.ipv4.tcp_keepalive_intvl", value: 30 }
+    - { name: "net.ipv4.tcp_keepalive_time", value: 120 }
+    - { name: "net.ipv4.tcp_max_syn_backlog", value: 4096 }
+    - { name: "vm.swappiness", value: 1 }
+    - { name: "vm.dirty_background_ratio", value: 10 }
+    - { name: "vm.dirty_ratio", value: 20 }
+    - { name: "net.core.rmem_default", value: 262144 }
+    - { name: "net.core.wmem_default", value: 262144 }
+    - { name: "net.core.rmem_max", value: 262144 }
+    - { name: "net.core.wmem_max", value: 262144 }
+
+- name: Disable THP
+  blockinfile:
+    path: /etc/rc.local
+    state: present
+    create: yes
+    block: |
+      if test -f /sys/kernel/mm/redhat_transparent_hugepage/enabled; then
+        echo never > /sys/kernel/mm/redhat_transparent_hugepage/enabled
+      fi
+
+- name: Logrotate for k8s
+  blockinfile:
+    path: /etc/logrotate.d/k8s
+    state: present
+    create: yes
+    block: |
+      /var/log/k8s/k8s.log {
+          rotate 7
+          create 0644 k8s k8s
+          daily
+          dateext
+          dateformat -%Y-%m-%d-%s
+          missingok
+          compress
+          sharedscripts
+          copytruncate
+          postrotate
+                      kill -SIGUSR1 $(cat /data/db/k8s.lock 2> /dev/null) 2> /dev/null || true
+          endscript
+      }    
+
+#- name: Setting user limits
+#  blockinfile:
+#    path: /etc/security/limits.d/10-k8s.conf
+#    state: present
+#    create: yes
+#    block: |
+#      dname soft nofile 64000
+#      dname hard nofile 64000
+#      dname soft nproc 64000
+#      dname hard nproc 64000
