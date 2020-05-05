@@ -38,16 +38,16 @@
   with_indexed_items:
     - "{{ devices }}"
 
-- name: Setting noop scheduler
-  shell: echo noop > /sys/block/"{{ item }}"/queue/scheduler
-  with_items:
-    - "{{ devices }}"
+#- name: Setting noop scheduler
+#  shell: echo noop > /sys/block/"{{ item }}"/queue/scheduler
+#  with_items:
+#    - "{{ devices }}"
   
-- name: blockdev
-  shell: blockdev --getra /dev/"{{ item }}"
-  with_items:
-    - "{{ devices }}"
-  register: result
+#- name: blockdev
+#  shell: blockdev --getra /dev/"{{ item }}"
+#  with_items:
+#    - "{{ devices }}"
+#  register: result
 
 - name: Modifying read-ahead per block devices
   lineinfile:
@@ -58,4 +58,3 @@
   when: result.stdout_lines != 64
   with_items:
     - "{{ devices }}"
-  register: ra
